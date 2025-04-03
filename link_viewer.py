@@ -2,6 +2,7 @@ import re
 import webbrowser
 import os
 import argparse
+import random
 
 def parse_markdown(file_path):
     """
@@ -53,6 +54,21 @@ def display_menu(categorized_links):
     
     return selected_link
 
+def random_link(categorized_links):
+    """
+    Select a random link from all available links across all categories.
+    """
+    all_links = []
+    for heading in categorized_links.values():
+        all_links.extend(heading)  # Flatten the list of links
+
+    if not all_links:
+        print("No links available.")
+        return None
+
+    random_choice = random.choice(all_links)  # Choose a random link
+    return random_choice[1]  # Return the URL
+
 def open_in_browser(url):
     """
     Open the selected URL in the default web browser.
@@ -64,7 +80,8 @@ def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description="Open links from a markdown file categorized by headings.")
     parser.add_argument('--path', required=True, help="Path to the markdown file")
-    
+    parser.add_argument('--random', action='store_true', help="Open a random link instead of selecting manually")
+
     # Parse arguments
     args = parser.parse_args()
     markdown_file = args.path
@@ -79,9 +96,15 @@ def main():
         print("No headings or links found in the markdown file.")
         return
 
-    selected_url = display_menu(categorized_links)
-    open_in_browser(selected_url)
+    if args.random:
+        # If --random flag is provided, choose a random link
+        selected_url = random_link(categorized_links)
+        if selected_url:
+            open_in_browser(selected_url)
+    else:
+        # Otherwise, proceed with manual selection
+        selected_url = display_menu(categorized_links)
+        open_in_browser(selected_url)
 
 if __name__ == "__main__":
     main()
-
