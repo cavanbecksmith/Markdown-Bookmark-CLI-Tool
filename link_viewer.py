@@ -7,9 +7,14 @@ import random
 def parse_markdown(file_path):
     """
     Parse the markdown file, extract headings and links categorized by headings.
+    Compatible with UTF-8 files across Windows and Linux.
     """
-    with open(file_path, 'r') as f:
-        content = f.read()
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except UnicodeDecodeError:
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
+            content = f.read()
 
     # Regex pattern to capture headings and links
     headings = re.findall(r'^(##)\s*(.*)', content, re.MULTILINE)
@@ -32,6 +37,7 @@ def parse_markdown(file_path):
                 categorized_links[current_heading].append((link_text, link_url))
 
     return categorized_links
+
 
 def display_menu(categorized_links):
     """
