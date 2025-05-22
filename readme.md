@@ -52,6 +52,10 @@ musicdel() {
 
 ## Bash usage
 ```
+# musicadd <url> <category> <title>
 musicadd "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-musicadd 
+musicadd "https://www.youtube.com/watch?v=dQw4w9WgXcQ" "Old school bangers" "A really good song"
+
+# musicr - random song in list
+# music - Select from all categories
 ```
