@@ -83,37 +83,93 @@ def open_in_browser(url):
     print(f"Opening: {url}")
     webbrowser.open(url)
 
-def add_link(file_path, title, url, category, categorized_links):
-    if not title:
-        title = "⭐"
+# def add_link(file_path, title, url, category, categorized_links):
+#     if not title:
+#         title = "⭐"
 
-    new_line = f"[#{title}]({url})\n"
-    added = False
+#     new_line = f"[#{title}]({url})\n"
+#     added = False
 
-    # Read existing content
-    with open(file_path, 'r', encoding='utf-8') as fr:
-        lines = fr.readlines()
+#     # Read existing content
+#     with open(file_path, 'r', encoding='utf-8') as fr:
+#         lines = fr.readlines()
 
-    # Try to find category and insert link there
-    for i, line in enumerate(lines):
-        if line.strip() == f"## {category}":
-            insert_pos = i + 1
-            # Skip past existing links
-            while insert_pos < len(lines) and lines[insert_pos].strip().startswith("[#"):
-                insert_pos += 1
-            lines.insert(insert_pos, new_line)
-            added = True
-            break
+#     # Try to find category and insert link there
+#     for i, line in enumerate(lines):
+#         if line.strip() == f"## {category}":
+#             insert_pos = i + 1
+#             # Skip past existing links
+#             while insert_pos < len(lines) and lines[insert_pos].strip().startswith("[#"):
+#                 insert_pos += 1
+#             lines.insert(insert_pos, new_line)
+#             added = True
+#             break
 
-    if not added:
-        # Append category and new link if category not found
-        lines.append(f"\n## {category}\n{new_line}")
+#     if not added:
+#         # Append category and new link if category not found
+#         lines.append(f"\n## {category}\n{new_line}")
 
-    # Write back to file
-    with open(file_path, 'w', encoding='utf-8') as fw:
-        fw.writelines(lines)
+#     # Write back to file
+#     with open(file_path, 'w', encoding='utf-8') as fw:
+#         fw.writelines(lines)
 
-    print(f"✅ Added: [#{title}]({url}) under '{category}'")
+#     print(f"✅ Added: [#{title}]({url}) under '{category}'")
+
+def add_link(markdown_file, title, url, category, categorized_links):
+    """
+    Add a link to the specified category in the markdown file.
+    If title is None, fetch it from the URL.
+    If category is None, default to '⭐'.
+    """
+    if category is None:
+        category = '⭐'
+
+    if title is None:
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+            response = requests.get(url, timeout=5)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            title = soup.title.string.strip() if soup.title else url
+        except Exception:
+            title = url
+
+    # Build the markdown link
+    markdown_link = f"[#{title}]({url})\n"
+
+    with open(markdown_file, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+
+    # Locate the category heading
+    cat_heading = f"## {category}"
+    new_lines = []
+    inserted = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        new_lines.append(line)
+        if line.strip() == cat_heading:
+            i += 1
+            # Skip past existing links under the heading
+            while i < len(lines) and not lines[i].startswith('## '):
+                new_lines.append(lines[i])
+                i += 1
+            # Append the new link just before the next heading or EOF
+            new_lines.insert(len(new_lines), markdown_link)
+            inserted = True
+            continue
+        i += 1
+
+    # If the category wasn't found, create it at the end
+    if not inserted:
+        new_lines.append(f"\n{cat_heading}\n")
+        new_lines.append(markdown_link)
+
+    with open(markdown_file, 'w', encoding='utf-8') as f:
+        f.writelines(new_lines)
+
+    print(f"Added to '{category}': {markdown_link.strip()}")
+
 
 def fetch_title(url):
     try:
