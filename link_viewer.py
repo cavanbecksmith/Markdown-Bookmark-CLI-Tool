@@ -83,37 +83,6 @@ def open_in_browser(url):
     print(f"Opening: {url}")
     webbrowser.open(url)
 
-# def add_link(file_path, title, url, category, categorized_links):
-#     if not title:
-#         title = "⭐"
-
-#     new_line = f"[#{title}]({url})\n"
-#     added = False
-
-#     # Read existing content
-#     with open(file_path, 'r', encoding='utf-8') as fr:
-#         lines = fr.readlines()
-
-#     # Try to find category and insert link there
-#     for i, line in enumerate(lines):
-#         if line.strip() == f"## {category}":
-#             insert_pos = i + 1
-#             # Skip past existing links
-#             while insert_pos < len(lines) and lines[insert_pos].strip().startswith("[#"):
-#                 insert_pos += 1
-#             lines.insert(insert_pos, new_line)
-#             added = True
-#             break
-
-#     if not added:
-#         # Append category and new link if category not found
-#         lines.append(f"\n## {category}\n{new_line}")
-
-#     # Write back to file
-#     with open(file_path, 'w', encoding='utf-8') as fw:
-#         fw.writelines(lines)
-
-#     print(f"✅ Added: [#{title}]({url}) under '{category}'")
 
 def add_link(markdown_file, title, url, category, categorized_links):
     """
@@ -182,6 +151,52 @@ def fetch_title(url):
         print(f"⚠️  Could not fetch title from {url}: {e}")
     return None
 
+def fix_bare_links(markdown_file, stdout=False):
+    url_pattern = re.compile(r'^\s*(https?://\S+)\s*$')
+    link_pattern = re.compile(r'^\s*\[.*\]\(https?://\S+\)\s*$')
+
+    updated_lines = []
+    updated = False
+
+    with open(markdown_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            stripped = line.strip()
+
+            # Leave category headings and markdown links unchanged
+            if stripped.startswith("##") or link_pattern.match(stripped):
+                updated_lines.append(line)
+                continue
+
+            # Bare URL line?
+            url_match = url_pattern.match(stripped)
+            if url_match:
+                url = url_match.group(1)
+                print(f"🔍 Fetching title for: {url}")
+                title = fetch_title(url)
+                if title:
+                    formatted = f"[{title}]({url})\n"
+                    updated_lines.append(formatted)
+                    updated = True
+                    print(f"✅ Converted to: {formatted.strip()}")
+                else:
+                    print(f"⚠️  Could not fetch title for: {url}")
+                    updated_lines.append(line)
+            else:
+                updated_lines.append(line)
+
+    if stdout:
+        print("\n📄 Final Output:\n" + "-" * 40)
+        for line in updated_lines:
+            print(line, end="")
+        print("\n" + "-" * 40)
+        print("✅ Preview complete. No file written.")
+    else:
+        if updated:
+            with open(markdown_file, 'w', encoding='utf-8') as f:
+                f.writelines(updated_lines)
+            print("✅ File updated with new titles.")
+        else:
+            print("ℹ️  No bare links found to update.")
 
 def delete_link(file_path, url, category):
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -208,6 +223,7 @@ def delete_link(file_path, url, category):
     if not removed:
         print("⚠️  Link not found.")
 
+
 def main():
     parser = argparse.ArgumentParser(description="Manage categorized links in a markdown file.")
     parser.add_argument('--path', required=True, help="Path to the markdown file")
@@ -216,6 +232,7 @@ def main():
     group.add_argument('--random', action='store_true', help="Open a random link")
     group.add_argument('--add', nargs='+', metavar=('URL', 'CATEGORY', 'TITLE'), help="Add a link: URL CATEGORY [TITLE]")
     group.add_argument('--delete', nargs=2, metavar=('URL', 'CATEGORY'), help="Delete a link")
+    group.add_argument('--fix-titles', action='store_true', help="Fetch and update missing link titles")
 
     args = parser.parse_args()
     markdown_file = args.path
@@ -242,13 +259,17 @@ def main():
             title = fetch_title(url)
 
         add_link(markdown_file, title, url, category, categorized_links)
+
     elif args.delete:
         url, category = args.delete
         delete_link(markdown_file, url, category)
+
     elif args.random:
         selected_url = random_link(categorized_links)
         if selected_url:
             open_in_browser(selected_url)
+    elif args.fix_titles:
+        fix_bare_links(markdown_file)
     else:
         selected_url = display_menu(categorized_links)
         open_in_browser(selected_url)
