@@ -454,8 +454,6 @@ def main():
     # Parse markdown to dictionary structure
     categorized_links = parse_markdown(markdown_file)
 
-    print(categorized_links['Hacker Mode 👨\u200d💻'])
-
     if args.add:
         url = args.add[0]
         category = "⭐"
