@@ -91,7 +91,8 @@ def add_link(markdown_file, title, url, category, categorized_links):
     If category is None, default to '⭐'.
     """
     if category is None:
-        category = '⭐'
+        # category = '⭐'
+        category = 'New'
 
     if title is None:
         try:
@@ -243,6 +244,8 @@ def main():
 
     # Parse markdown to dictionary structure
     categorized_links = parse_markdown(markdown_file)
+
+    print(categorized_links['Hacker Mode 👨\u200d💻'])
 
     if args.add:
         url = args.add[0]
