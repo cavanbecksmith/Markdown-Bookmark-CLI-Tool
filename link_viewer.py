@@ -4,11 +4,11 @@ import os
 import argparse
 import random
 import requests
+import string
 
 def parse_markdown(file_path):
     """
-    Parse the markdown file, extract headings and links categorized by headings.
-    Compatible with UTF-8 files across Windows and Linux.
+    Parse the markdown file and extract headings and links categorized by headings.
     """
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -17,28 +17,23 @@ def parse_markdown(file_path):
         with open(file_path, 'r', encoding='utf-8-sig') as f:
             content = f.read()
 
-    # Regex pattern to capture headings and links
-    headings = re.findall(r'^(##)\s*(.*)', content, re.MULTILINE)
-    links = re.findall(r'\[([^\]]+)\]\((http[^\)]+)\)', content)
-
     categorized_links = {}
     current_heading = None
 
-    # Categorize links under respective headings
+    # Safer regex for markdown links
+    link_pattern = re.compile(r'\[([^\]]+?)\]\((https?://[^\s)]+)\)')
+
     for line in content.splitlines():
         heading_match = re.match(r'^(##)\s*(.*)', line)
         if heading_match:
             current_heading = heading_match.group(2).strip()
             categorized_links[current_heading] = []
-        elif current_heading and re.search(r'\[([^\]]+)\]\((http[^\)]+)\)', line):
-            link_match = re.search(r'\[([^\]]+)\]\((http[^\)]+)\)', line)
-            if link_match:
-                link_text = link_match.group(1)
-                link_url = link_match.group(2)
+        elif current_heading:
+            for match in link_pattern.finditer(line):
+                link_text, link_url = match.groups()
                 categorized_links[current_heading].append((link_text, link_url))
 
     return categorized_links
-
 
 def display_menu(categorized_links):
     """
@@ -83,6 +78,21 @@ def open_in_browser(url):
     print(f"Opening: {url}")
     webbrowser.open(url)
 
+def sanitize_title(title):
+    # Allow readable characters + emojis, remove control chars or escape sequences
+    allowed = string.printable + "★☆♡♥✨✿✼♪⋆★→←↑↓&*/|"
+    
+    # Remove square brackets
+    title = title.replace('[', '').replace(']', '')
+    
+    # Replace percent sign with a safe alternative
+    title = title.replace('%', '﹪')  # Fullwidth percent sign (U+FF05)
+
+    # Keep only allowed characters
+    return ''.join(
+        c for c in title
+        if c in allowed or c.isalnum() or c in [' ', '.', '-', '_', '#', '(', ')']
+    )
 
 def add_link(markdown_file, title, url, category, categorized_links):
     """
@@ -101,6 +111,7 @@ def add_link(markdown_file, title, url, category, categorized_links):
             response = requests.get(url, timeout=5)
             soup = BeautifulSoup(response.text, 'html.parser')
             title = soup.title.string.strip() if soup.title else url
+            title = sanitize_title(title)
         except Exception:
             title = url
 
@@ -175,7 +186,7 @@ def fix_bare_links(markdown_file, stdout=False):
                 print(f"🔍 Fetching title for: {url}")
                 title = fetch_title(url)
                 if title:
-                    formatted = f"[{title}]({url})\n"
+                    formatted = f"[{sanitize_title(title)}]({url})\n"
                     updated_lines.append(formatted)
                     updated = True
                     print(f"✅ Converted to: {formatted.strip()}")
@@ -198,6 +209,199 @@ def fix_bare_links(markdown_file, stdout=False):
             print("✅ File updated with new titles.")
         else:
             print("ℹ️  No bare links found to update.")
+
+
+
+def fix_bare_links_in_category(markdown_file, target_category, stdout=False):
+    url_pattern = re.compile(r'^\s*(https?://\S+)\s*$')
+    link_pattern = re.compile(r'^\s*\[.*\]\(https?://\S+\)\s*$')
+    heading_pattern = re.compile(r'^##\s+(.*)')
+
+    updated_lines = []
+    updated = False
+    inside_target_category = False
+
+    with open(markdown_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            stripped = line.strip()
+
+            # Detect if we've entered a new category
+            heading_match = heading_pattern.match(line)
+            if heading_match:
+                current_heading = heading_match.group(1).strip()
+                inside_target_category = (current_heading == target_category)
+                updated_lines.append(line)
+                continue
+
+            # If not in the target category, just copy the line
+            if not inside_target_category:
+                updated_lines.append(line)
+                continue
+
+            # Skip lines already formatted as markdown links
+            if link_pattern.match(stripped):
+                updated_lines.append(line)
+                continue
+
+            # Convert bare URL to titled markdown link
+            url_match = url_pattern.match(stripped)
+            if url_match:
+                url = url_match.group(1)
+                if stdout:
+                    print(f"🔍 Fetching title for: {url}")
+                title = fetch_title(url)
+                if title:
+                    formatted = f"[{sanitize_title(title)}]({url})\n"
+                    updated_lines.append(formatted)
+                    updated = True
+                    if stdout:
+                        print(f"✅ Converted to: {formatted.strip()}")
+                else:
+                    if stdout:
+                        print(f"⚠️  Could not fetch title for: {url}")
+                    updated_lines.append(line)
+            else:
+                updated_lines.append(line)
+
+    if updated:
+        with open(markdown_file, 'w', encoding='utf-8') as f:
+            f.writelines(updated_lines)
+    elif stdout:
+        print("ℹ️  No bare links found or updated.")
+
+
+def refresh_all_link_titles(markdown_file, stdout=False):
+    link_pattern = re.compile(r'^\s*\[(.*?)\]\((https?://\S+)\)\s*$')
+    heading_pattern = re.compile(r'^##\s+')
+
+    updated_lines = []
+    updated = False
+
+    with open(markdown_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            stripped = line.strip()
+
+            # Leave category headings unchanged
+            if heading_pattern.match(stripped):
+                updated_lines.append(line)
+                continue
+
+            # Match and re-fetch title for any markdown link
+            link_match = link_pattern.match(stripped)
+            if link_match:
+                old_title, url = link_match.groups()
+                if stdout:
+                    print(f"🔁 Re-fetching title for: {url}")
+                title = fetch_title(url)
+                if title:
+                    formatted = f"[{sanitize_title(title)}]({url})\n"
+                    updated_lines.append(formatted)
+                    updated = True
+                    if stdout:
+                        print(f"✅ Updated to: {formatted.strip()}")
+                else:
+                    if stdout:
+                        print(f"⚠️  Could not fetch title for: {url}")
+                    updated_lines.append(line)
+                continue
+
+            # Bare URL?
+            url_match = re.match(r'^\s*(https?://\S+)\s*$', stripped)
+            if url_match:
+                url = url_match.group(1)
+                if stdout:
+                    print(f"🔍 Fetching title for bare URL: {url}")
+                title = fetch_title(url)
+                if title:
+                    formatted = f"[{sanitize_title(title)}]({url})\n"
+                    updated_lines.append(formatted)
+                    updated = True
+                    if stdout:
+                        print(f"✅ Converted to: {formatted.strip()}")
+                else:
+                    if stdout:
+                        print(f"⚠️  Could not fetch title for: {url}")
+                    updated_lines.append(line)
+            else:
+                updated_lines.append(line)
+
+    if updated:
+        with open(markdown_file, 'w', encoding='utf-8') as f:
+            f.writelines(updated_lines)
+    elif stdout:
+        print("ℹ️  No links updated.")
+
+
+
+def refresh_titles_in_category(markdown_file, target_category, stdout=False):
+    link_pattern = re.compile(r'^\s*\[(.*?)\]\((https?://\S+)\)\s*$')
+    url_pattern = re.compile(r'^\s*(https?://\S+)\s*$')
+    heading_pattern = re.compile(r'^##\s+(.*)$')
+
+    updated_lines = []
+    updated = False
+    inside_target = False
+
+    with open(markdown_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            stripped = line.strip()
+
+            # Check if this line is a heading
+            heading_match = heading_pattern.match(stripped)
+            if heading_match:
+                category_name = heading_match.group(1).strip()
+                inside_target = (category_name == target_category)
+                updated_lines.append(line)
+                continue
+
+            if inside_target:
+                # Refresh markdown link
+                link_match = link_pattern.match(stripped)
+                if link_match:
+                    _, url = link_match.groups()
+                    if stdout:
+                        print(f"🔁 Re-fetching title for: {url}")
+                    title = fetch_title(url)
+                    if title:
+                        formatted = f"[{sanitize_title(title)}]({url})\n"
+                        updated_lines.append(formatted)
+                        updated = True
+                        if stdout:
+                            print(f"✅ Updated to: {formatted.strip()}")
+                    else:
+                        updated_lines.append(line)
+                        if stdout:
+                            print(f"⚠️  Could not fetch title for: {url}")
+                    continue
+
+                # Refresh bare URL
+                url_match = url_pattern.match(stripped)
+                if url_match:
+                    url = url_match.group(1)
+                    if stdout:
+                        print(f"🔍 Fetching title for bare URL: {url}")
+                    title = fetch_title(url)
+                    if title:
+                        formatted = f"[{sanitize_title(title)}]({url})\n"
+                        updated_lines.append(formatted)
+                        updated = True
+                        if stdout:
+                            print(f"✅ Converted to: {formatted.strip()}")
+                    else:
+                        updated_lines.append(line)
+                        if stdout:
+                            print(f"⚠️  Could not fetch title for: {url}")
+                    continue
+
+            # Not in target or not a link — leave unchanged
+            updated_lines.append(line)
+
+    if updated:
+        with open(markdown_file, 'w', encoding='utf-8') as f:
+            f.writelines(updated_lines)
+    elif stdout:
+        print("ℹ️  No links updated.")
+
 
 def delete_link(file_path, url, category):
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -234,6 +438,11 @@ def main():
     group.add_argument('--add', nargs='+', metavar=('URL', 'CATEGORY', 'TITLE'), help="Add a link: URL CATEGORY [TITLE]")
     group.add_argument('--delete', nargs=2, metavar=('URL', 'CATEGORY'), help="Delete a link")
     group.add_argument('--fix-titles', action='store_true', help="Fetch and update missing link titles")
+
+
+    parser.add_argument("--category", type=str, help="Specify a category to operate within")
+    parser.add_argument("--refresh", action="store_true", help="Refresh all link titles instead of only fixing bare ones")
+
 
     args = parser.parse_args()
     markdown_file = args.path
@@ -272,7 +481,31 @@ def main():
         if selected_url:
             open_in_browser(selected_url)
     elif args.fix_titles:
-        fix_bare_links(markdown_file)
+        if args.refresh:
+            if args.category:
+                # Refresh all link titles in a specific category
+                refresh_titles_in_category(markdown_file, args.category, stdout=True)
+            else:
+                # Refresh all link titles across the whole file
+                refresh_all_link_titles(markdown_file, stdout=True)
+        else:
+            if args.category:
+                # Fix bare links in a specific category
+                fix_bare_links_in_category(markdown_file, args.category, stdout=True)
+            else:
+                # Fix all bare links in the file
+                fix_bare_links(markdown_file, stdout=True)
+        # For All missing links in file (default no extra params)
+        # fix_bare_links(markdown_file)
+
+        # For missing links in category (category="category flag exists")
+        # fix_bare_links_in_category(markdown_file,"Hacker Mode 👨‍💻", stdout=True)
+
+        # Refresh all link titles in category (category flag exist & refresh flag bool)
+        # refresh_titles_in_category(markdown_file,"Hacker Mode 👨‍💻", stdout=True)
+
+        # Refresh all links over the file (refresh flag exists)
+        # refresh_all_link_titles(markdown_file, stdout=True)
     else:
         selected_url = display_menu(categorized_links)
         open_in_browser(selected_url)
