@@ -1,112 +1,49 @@
 # Markdown Bookmark CLI Tool
 
-usage
+This is a python Markdown tool Aimed at both a links only approach of replacing a Bookmark manager and a MD content viewer for storing and viewing information inside a terminal
+
+- **md_browser** - Markdown note taking tool
+- **link_viewer** - Bookmark link application
+
+
+## Setup
+
+All of the files exist within the .env file in the repo. The idea is to build up the .md files as vars and the script will enable the functions for you to use.
+
+* link both the `.sh` files to your .bashrc using 
+    * `source /path/to/directory/link_viewer.sh`
+    * `source /path/to/directory/md_browser.sh`
+* Configure the `.env.example` to your relative paths and configure script locations
+* Add in MD_FILE_\<name\> for a new link file
+* Add in NOTE_FILE_\<name\> for a note file
+
+## Link viewer
+
+Access the link viewer by typing i.e for env entry `MD_FILE_links` 
+* linksadd \<url\> \[category\] \[title\] - Add link to markdown file as links list
+* links - Browsing information
+
+## MD Browser
+
+Access the MD Browser by typing i.e for env entry `NOTE_FILE_test` 
+* testadd - Wizard for add
+* test - Browsing information
+* testdel - Wizard for delete
+
+
+## Python Script Usage
+
+
+**Link viewer**
 ```
 python link_viewer.py --path /path/test.md
 python link_viewer.py --path /path/test.md --random
+python link_viewer.py --path /path/test.md --add "title" "category"
 ```
 
-## Bash Setup
-
+**Link viewer**
 ```
-# Shared variables
-export MUSIC_MD="/c/Users/winuser/folder_outside_protected_area/music.md"
-export MUSIC_SCRIPT="/c/Users/winuser/Markdown-Bookmark-CLI-Tool/link_viewer.py"
-export LINKS_MD="/c/Users/winuser/folder_outside_protected_area/links.md"
-
-# Aliases
-alias music="python $MD_SCRIPT --path=$MUSIC_MD"
-alias musicr="python $MD_SCRIPT --path=$MUSIC_MD --random"
-alias links="python $MD_SCRIPT --path=$LINKS_MD"
-alias linksr="python $MD_SCRIPT --path=$LINKS_MD --random"
-
-alias fixtitle="python $MD_SCRIPT --path=$LINKS_MD --fix-titles"
-
-musicadd() {  # usage: musicadd <url> [category] [title]
-    mdadd music "$@"
-}
-
-linkadd() {   # usage: linkadd <url> [category] [title]
-    mdadd links "$@"
-}
-
-# Generalized add function
-mdadd() {
-    local type="$1"
-    local url="$2"
-    local category="$3"
-    local title="$4"
-
-    if [[ "$type" != "music" && "$type" != "links" ]]; then
-        echo "Usage: mdadd <music|links> <url> [category] [title]"
-        return 1
-    fi
-
-    if [[ -z "$url" ]]; then
-        echo "Usage: mdadd <music|links> <url> [category] [title]"
-        return 1
-    fi
-
-    local file_var="${type^^}_MD"
-    local file_path="${!file_var}"
-
-    if [[ -z "$category" ]]; then
-        echo "Select a category:"
-        mapfile -t headings < <(grep '^## ' "$file_path" | sed 's/^## //')
-
-        if [[ ${#headings[@]} -eq 0 ]]; then
-            echo "No categories found in $file_path."
-            return 1
-        fi
-
-        for i in "${!headings[@]}"; do
-            printf "%2d. %s\n" $((i + 1)) "${headings[$i]}"
-        done
-
-        read -rp "Enter number: " choice
-        if [[ ! "$choice" =~ ^[0-9]+$ || "$choice" -lt 1 || "$choice" -gt "${#headings[@]}" ]]; then
-            echo "Invalid selection."
-            return 1
-        fi
-
-        category="${headings[$((choice - 1))]}"
-    fi
-
-    args=(--add "$url" "$category")
-    [[ -n "$title" ]] && args+=("$title")
-
-    python "$MD_SCRIPT" --path="$file_path" "${args[@]}"
-}
-
-# Generalized delete function
-mddel() {
-    local type="$1"
-    local url="$2"
-    local category="$3"
-
-    if [[ "$type" != "music" && "$type" != "links" ]]; then
-        echo "Usage: mddel <music|links> <url> <category>"
-        return 1
-    fi
-
-    if [[ -z "$url" || -z "$category" ]]; then
-        echo "Usage: mddel <music|links> <url> <category>"
-        return 1
-    fi
-
-    local file_var="${type^^}_MD"
-    local file_path="${!file_var}"
-
-    python "$MD_SCRIPT" --path="$file_path" --delete "$url" "$category"
-}
-```
-
-## Bash usage
-```
-# musicadd <url> <category> <title>
-musicadd "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-musicadd "https://www.youtube.com/watch?v=dQw4w9WgXcQ" "Old school bangers" "A really good song"
-
-# musicr - random song in list
-# music - Select from all categories
+python md_browser.py "/path/file.md"
+python md_browser.py "/path/file.md" add
+python md_browser.py "/path/file.md" delete
 ```

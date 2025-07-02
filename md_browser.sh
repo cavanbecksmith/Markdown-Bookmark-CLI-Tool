@@ -46,5 +46,5 @@ notedel() {
         return 1
     fi
     local file_path="${NOTE_FILES[$key]}"
-    "$PY_COMMAND" "$NOTES_MD_SCRIPT" --path="$file_path" --delete
+    "$PY_COMMAND" "$NOTES_MD_SCRIPT" "$file_path" "delete"
 }
