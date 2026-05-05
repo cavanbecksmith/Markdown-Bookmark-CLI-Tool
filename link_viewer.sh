@@ -32,17 +32,46 @@ done
 # Generalized add function
 mdadd() {
     local key="$1"
-    local url="$2"
-    local category="$3"
-    local title="$4"
+    shift
+    local url=""
+    local category=""
+    local title=""
+    local auto_flag=""
+    local prompt_flag=""
 
     if [[ -z "${MD_FILES[$key]}" ]]; then
         echo "Invalid key: $key"
         return 1
     fi
 
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -a|--auto)
+                auto_flag="--auto"
+                shift
+                ;;
+            -p|--prompt)
+                prompt_flag="--prompt"
+                shift
+                ;;
+            *)
+                if [[ -z "$url" ]]; then
+                    url="$1"
+                elif [[ -z "$category" ]]; then
+                    category="$1"
+                elif [[ -z "$title" ]]; then
+                    title="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
     if [[ -z "$url" ]]; then
-        echo "Usage: ${key}add <url> [category] [title]"
+        echo "Usage: ${key}add <url> [category] [title] [-a|--auto] [-p|--prompt]"
+        echo "  -a, --auto    Automatically fetch title from URL"
+        echo "  -p, --prompt  Prompt user to enter title manually"
         return 1
     fi
 
@@ -72,6 +101,8 @@ mdadd() {
 
     args=(--add "$url" "$category")
     [[ -n "$title" ]] && args+=("$title")
+    [[ -n "$auto_flag" ]] && args+=("$auto_flag")
+    [[ -n "$prompt_flag" ]] && args+=("$prompt_flag")
 
     "$PY_COMMAND" "$MD_SCRIPT" --path="$file_path" "${args[@]}"
 }
