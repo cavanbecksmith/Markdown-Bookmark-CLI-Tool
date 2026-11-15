@@ -27,6 +27,8 @@ for key in "${!MD_FILES[@]}"; do
 
     eval "${key}add() { mdadd \"$key\" \"\$@\"; }"
     eval "${key}del() { mddel \"$key\" \"\$@\"; }"
+
+    eval "${key}edit() { nano \"$path\"; }"
 done
 
 # Generalized add function

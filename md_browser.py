@@ -118,9 +118,38 @@ def browse(data):
         print(f"\n--- {selected_item} ---")
         print(data[selected_category]["entries"][selected_item])
 
+def search_entries(data, query):
+    query_lower = query.lower()
+    matches = []  # (display, kind, category, ref)
+
+    for category, content in data.items():
+        for heading, text in content["entries"].items():
+            if query_lower in heading.lower() or query_lower in text.lower():
+                matches.append((f"[{category}] {heading}", "entry", category, heading))
+        for title, url in content["links"]:
+            if query_lower in title.lower() or query_lower in url.lower():
+                matches.append((f"[{category}] {title} (link)", "link", category, (title, url)))
+
+    if not matches:
+        print(f"No notes or links found matching '{query}'.")
+        return
+
+    display_items = [m[0] for m in matches]
+    selected_display = choose_from_list(display_items, f"Search results for '{query}':")
+    idx = display_items.index(selected_display)
+    _, kind, category, ref = matches[idx]
+
+    if kind == "link":
+        title, url = ref
+        print(f"Opening {url}...")
+        webbrowser.open(url)
+    else:
+        print(f"\n--- {ref} ---")
+        print(data[category]["entries"][ref])
+
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python md_browser.py <markdown_file> [browse|add|delete]")
+        print("Usage: python md_browser.py <markdown_file> [browse|add|delete|search <query>]")
         return
 
     filepath = sys.argv[1]
@@ -137,9 +166,15 @@ def main():
         add_entry(data, filepath)
     elif action == "delete":
         delete_entry(data, filepath)
+    elif action == "search":
+        query = " ".join(sys.argv[3:]).strip() if len(sys.argv) > 3 else input("Search query: ").strip()
+        if not query:
+            print("❌ Search query cannot be empty.")
+            return
+        search_entries(data, query)
     else:
         print(f"Unknown action: {action}")
-        print("Valid actions: browse, add, delete")
+        print("Valid actions: browse, add, delete, search")
 
 if __name__ == "__main__":
     main()

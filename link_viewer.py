@@ -1,4 +1,6 @@
 import re
+import sys
+import time
 import webbrowser
 import os
 import argparse
@@ -8,6 +10,121 @@ import socket
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 from urllib.parse import urlparse
+
+try:
+    import msvcrt
+    _IS_WINDOWS = True
+except ImportError:
+    _IS_WINDOWS = False
+    import termios
+    import tty
+    import select
+
+# Sentinels returned by prompt_key_choice()
+BACK = object()
+QUIT = object()
+
+# How long to wait for an additional digit before auto-submitting a partial choice.
+_DIGIT_TIMEOUT = 0.6
+
+
+class _RawMode:
+    """Puts the terminal into raw (unbuffered, no-echo) mode on POSIX so single
+    keypresses can be read without waiting for Enter. No-op on Windows, where
+    msvcrt already reads raw keys directly."""
+
+    def __enter__(self):
+        if not _IS_WINDOWS:
+            self._fd = sys.stdin.fileno()
+            self._old = termios.tcgetattr(self._fd)
+            tty.setraw(self._fd)
+        return self
+
+    def __exit__(self, *exc_info):
+        if not _IS_WINDOWS:
+            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old)
+
+
+def _read_key(timeout=None):
+    """
+    Read a single keypress. If `timeout` (seconds) is given, returns '' if no
+    key arrives in time. Extended keys (arrows, function keys) are swallowed
+    and reported as ''.
+    """
+    if _IS_WINDOWS:
+        if timeout is None:
+            ch = msvcrt.getwch()
+        else:
+            ch = ''
+            start = time.time()
+            while time.time() - start < timeout:
+                if msvcrt.kbhit():
+                    ch = msvcrt.getwch()
+                    break
+                time.sleep(0.01)
+        if ch in ('\x00', '\xe0'):
+            msvcrt.getwch()  # discard the extended-key code that follows
+            return ''
+        return ch
+    else:
+        if timeout is None:
+            return sys.stdin.read(1)
+        ready, _, _ = select.select([sys.stdin], [], [], timeout)
+        return sys.stdin.read(1) if ready else ''
+
+
+def prompt_key_choice(max_choice):
+    """
+    Wait for keypress(es) selecting a 1-based item number, with no Enter
+    required:
+    - Digits accumulate and auto-submit as soon as no further digit could
+      still produce a valid, larger item number (so e.g. pressing '1' when
+      there are only 5 items submits immediately; with 21 items it waits
+      briefly in case a second digit follows, e.g. '1' then '0' -> 10).
+    - Backspace erases the last typed digit, or if none is pending, signals
+      "go back" to the caller.
+    - 'q' signals "quit".
+    Returns an int choice (1..max_choice), BACK, or QUIT.
+    """
+    buffer = ''
+    with _RawMode():
+        while True:
+            ch = _read_key(_DIGIT_TIMEOUT if buffer else None)
+
+            if ch == '' and buffer:
+                return int(buffer)  # digit timeout elapsed: submit what we have
+
+            if ch in ('\r', '\n'):
+                if buffer:
+                    return int(buffer)
+                continue
+
+            if ch in ('\x08', '\x7f'):  # Backspace
+                if buffer:
+                    buffer = buffer[:-1]
+                    sys.stdout.write('\b \b')
+                    sys.stdout.flush()
+                    continue
+                return BACK
+
+            if ch == '\x03':  # Ctrl+C
+                raise KeyboardInterrupt
+
+            if ch.lower() == 'q' and not buffer:
+                return QUIT
+
+            if ch.isdigit():
+                candidate = buffer + ch
+                if int(candidate) > max_choice or int(candidate) == 0:
+                    continue  # ignore keys that can't lead to a valid item
+                buffer = candidate
+                sys.stdout.write(ch)
+                sys.stdout.flush()
+                if int(buffer + '0') > max_choice:
+                    return int(buffer)  # no further digit could still be valid
+                continue
+            # ignore any other key
+
 
 def is_safe_url(url):
     """Validate URL safety before fetching."""
@@ -104,23 +221,37 @@ def parse_markdown(file_path):
 def display_menu(categorized_links):
     """
     Display a menu of headings and their links for the user to choose from.
+    Press a number to select (auto-submits once unambiguous), Backspace to
+    go back a level, 'q' to quit.
     """
-    print("Select a category:")
     headings = list(categorized_links.keys())
-    for i, heading in enumerate(headings, 1):
-        print(f"{i}. {heading}")
 
-    heading_choice = int(input("\nEnter the number corresponding to the category: ")) - 1
-    selected_heading = headings[heading_choice]
+    while True:
+        print("Select a category:")
+        for i, heading in enumerate(headings, 1):
+            print(f"{i}. {heading}")
+        print("(Backspace or 'q' to quit)")
 
-    print(f"\nLinks under '{selected_heading}':")
-    for i, (link_text, link_url) in enumerate(categorized_links[selected_heading], 1):
-        print(f"{i}. {link_text}")
+        choice = prompt_key_choice(len(headings))
+        print()
+        if choice is QUIT or choice is BACK:
+            return None
+        selected_heading = headings[choice - 1]
+        links = categorized_links[selected_heading]
 
-    link_choice = int(input("\nEnter the number of the link you want to open: ")) - 1
-    selected_link = categorized_links[selected_heading][link_choice][1]
-    
-    return selected_link
+        while True:
+            print(f"Links under '{selected_heading}':")
+            for i, (link_text, link_url) in enumerate(links, 1):
+                print(f"{i}. {link_text}")
+            print("(Backspace to go back, 'q' to quit)")
+
+            link_choice = prompt_key_choice(len(links))
+            print()
+            if link_choice is QUIT:
+                return None
+            if link_choice is BACK:
+                break  # back to category list
+            return links[link_choice - 1][1]
 
 def random_link(categorized_links):
     """
@@ -136,6 +267,33 @@ def random_link(categorized_links):
 
     random_choice = random.choice(all_links)  # Choose a random link
     return random_choice[1]  # Return the URL
+
+def search_links(categorized_links, query):
+    """
+    Search links by title or URL (case-insensitive) and let the user pick one to open.
+    """
+    query_lower = query.lower()
+    matches = []  # (heading, link_text, link_url)
+
+    for heading, links in categorized_links.items():
+        for link_text, link_url in links:
+            if query_lower in link_text.lower() or query_lower in link_url.lower():
+                matches.append((heading, link_text, link_url))
+
+    if not matches:
+        print(f"No links found matching '{query}'.")
+        return None
+
+    print(f"Search results for '{query}':")
+    for i, (heading, link_text, link_url) in enumerate(matches, 1):
+        print(f"{i}. [{heading}] {link_text} ({link_url})")
+    print("(Backspace or 'q' to quit)")
+
+    choice = prompt_key_choice(len(matches))
+    print()
+    if choice is QUIT or choice is BACK:
+        return None
+    return matches[choice - 1][2]
 
 def open_in_browser(url):
     """
@@ -561,7 +719,9 @@ def main():
     group.add_argument('--add', nargs='+', metavar=('URL', 'CATEGORY', 'TITLE'), help="Add a link: URL CATEGORY [TITLE]")
     group.add_argument('--delete', nargs=2, metavar=('URL', 'CATEGORY'), help="Delete a link")
     group.add_argument('--fix-titles', action='store_true', help="Fetch and update missing link titles")
+    group.add_argument('-s', '--search', metavar='QUERY', help="Search links by title or URL and list matches")
 
+    parser.add_argument('query', nargs='?', help="Search query shorthand, e.g. music \"text\" (same as --search)")
     parser.add_argument("--category", type=str, help="Specify a category to operate within")
     parser.add_argument("--refresh", action="store_true", help="Refresh all link titles instead of only fixing bare ones")
     parser.add_argument("-a", "--auto", action="store_true", help="Automatically fetch title from URL when adding a link")
@@ -604,6 +764,10 @@ def main():
 
     elif args.random:
         selected_url = random_link(categorized_links)
+        if selected_url:
+            open_in_browser(selected_url)
+    elif args.search or args.query:
+        selected_url = search_links(categorized_links, args.search or args.query)
         if selected_url:
             open_in_browser(selected_url)
     elif args.fix_titles:

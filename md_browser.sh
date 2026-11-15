@@ -25,6 +25,8 @@ for key in "${!NOTE_FILES[@]}"; do
 
     eval "${key}add() { noteadd \"$key\"; }"
     eval "${key}del() { notedel \"$key\"; }"
+
+    eval "${key}edit() { nano \"$path\"; }"
 done
 
 # Generalized add function (for content, not links)
